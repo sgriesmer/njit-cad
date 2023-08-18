@@ -1,0 +1,111 @@
+```{r front, child="front.Rmd", echo=FALSE}
+```
+
+## Dependencies
+
+This document has the following dependencies:
+
+```{r dependencies, warning=FALSE, message=FALSE}
+library(GenomicRanges)
+library(rtracklayer)
+library(AnnotationHub)
+library(TFutils)
+```
+
+## Use TFutils to get ENCODE 690 dataset
+
+```{r tfutils}
+names(TFutils::encode690)
+TFutils::encode690[,1:5]
+df1 = TFutils::encode690["title"][1]
+df1[[1]]
+```
+
+Lets take a look at one dataset for the TF for the BRCA1 gene from the Gm12878 cell line:
+
+```{r ahub_GR}
+ah = AnnotationHub()
+tfbs_title = df1[[1]][286] # wgEncodeAwgTfbsBroadHuvecCtcfUniPk.narrowPeak.gz
+gr1 <- subset(ah, title == tfbs_title)[[1]]
+gr1
+```
+
+There are 551 TFs in the dataset. Let's look at the distribution of sizes.
+
+```{r ahub_summary}
+summary(width(gr1))
+table(width(gr1))
+```
+
+Most peaks in gr1 have a width of 296bp.
+
+Let's get the center 101bp coordinates of the TF.
+
+```{r ahub_resize}
+dnabert_input = resize(gr1, width = 101, fix = "center")
+table(width(dnabert_input))
+```
+
+Look at sequences
+
+```{r get_sequences}
+library(memes)
+human_genome = BSgenome.Hsapiens.UCSC.hg19
+dnabert_input_dss = get_sequence(dnabert_input, human_genome)
+dnabert_input_dss
+```
+
+Convert to data frame; generate negative sequences by shuffling
+
+```{r reformat_and_shuffle_for_negative}
+library(universalmotif)
+
+dss2df = function(dss) data.frame(names=names(dss), seq=as.character(dss), neg_seq=shuffle_sequences(dss, k=2, method="euler"))
+
+dnabert_input_df = dss2df(dnabert_input_dss)
+dnabert_input_df
+```
+
+Save in a csv file
+
+```{r save_csv}
+library(stringr)
+dsname_long = tfbs_title
+dsname_pre = str_replace_all(dsname_long,".narrowPeak.gz","")
+dsname = str_replace_all(dsname_pre,"wgEncodeAwgTfbs","")
+filename=paste("/Users/sjg/Downloads/",dsname,".csv", sep='')
+write.csv(dnabert_input_df, file=filename)
+```
+
+Function to create positive and negative sequences from each TFBS dataset
+
+```{r ahub_seq}
+ds_create = function(ah, ds) {
+  gr = subset(ah, title == ds)[[1]]
+  dnabert_input = resize(gr, width = 101, fix = "center")
+  human_genome = BSgenome.Hsapiens.UCSC.hg19
+  dnabert_input_dss = get_sequence(dnabert_input, human_genome)
+  dnabert_input_df = dss2df(dnabert_input_dss)
+  dsname_long = ds
+  dsname_pre = str_replace_all(dsname_long,".narrowPeak.gz","")
+  dsname = str_replace_all(dsname_pre,"wgEncodeAwgTfbs","")
+  filename=paste("/Users/sjg/Downloads/tfbs_datasets/",dsname,".csv", sep='')
+  write.csv(dnabert_input_df, file=filename)
+}
+```
+
+Loop over first 10 tfbs datasets
+
+```{r loop_tfbs}
+for (tfbs_ds in df1[[1]][101:140]) {
+  ds_create(ah,tfbs_ds)
+}
+```
+
+## SessionInfo
+
+\scriptsize
+
+```{r sessionInfo, echo=FALSE}
+sessionInfo()
+```
