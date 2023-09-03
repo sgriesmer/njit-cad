@@ -183,6 +183,8 @@ matchSeqs = function(gc1, gc2, len1, len2,  gc_th=0.02, len_th=0.02){
 ds_create_with_random_neg = function(dnabert_input, ds, genome) {
   
   # create BED file
+
+  options(scipen=999)
   
   df <- data.frame(seqnames=seqnames(dnabert_input),
   starts=start(dnabert_input)-1,
