@@ -10,6 +10,7 @@ library(GenomicRanges)
 library(rtracklayer)
 library(AnnotationHub)
 library(TFutils)
+library(stringr)
 ```
 
 ## Use TFutils to get ENCODE 690 dataset
@@ -25,7 +26,7 @@ Lets take a look at one dataset for the TF for the BRCA1 gene from the Gm12878 c
 
 ```{r ahub_GR}
 ah = AnnotationHub()
-tfbs_title = df1[[1]][1] # wgEncodeAwgTfbsBroadHuvecPol2bUniPk.narrowPeak.gz
+tfbs_title = df1[[1]][620] # wgEncodeAwgTfbsBroadHuvecPol2bUniPk.narrowPeak.gz
 gr1 <- subset(ah, title == tfbs_title)[[1]]
 gr1
 ```
@@ -55,15 +56,10 @@ dnabert_input_dss = get_sequence(dnabert_input, human_genome)
 dnabert_input_dss
 ```
 
-```{r file_test}
-df1[[1]][661:690]
-```
-
-
 Find random sequence with width of 101 and same GC content
 
 ```{r helper_functions}
-getichrpos = function(ipos){
+getichrpos = function(ipos, chrpos){
       j = order(ipos); 
       ipos = sort(ipos); 
       ci = 1;
@@ -84,16 +80,16 @@ getichrpos = function(ipos){
 # output: GenomicRange of sequences
 #
     
-generateRandomGenSeqs = function(seqlens){
+generateRandomGenSeqs = function(seqlens, pmax, chrpos, ichrA, chrpos0){
       rpos = sample(pmax, length(seqlens), replace = TRUE)
-      ichr1 = getichrpos(rpos)
-      ichr2 = getichrpos(rpos+seqlens)
+      ichr1 = getichrpos(rpos, chrpos)
+      ichr2 = getichrpos(rpos+seqlens, chrpos)
       
       jj = which(ichr1!=ichr2)
       while(length(jj)>0){
         rpos[jj] = sample(pmax, length(jj), replace = TRUE)
-        ichr1 = getichrpos(rpos)
-        ichr2 = getichrpos(rpos+seqlens)
+        ichr1 = getichrpos(rpos, chrpos)
+        ichr2 = getichrpos(rpos+seqlens, chrpos)
         jj = which(ichr1!=ichr2)
       }
       chr = ichrA[ichr1]
@@ -180,10 +176,10 @@ matchSeqs = function(gc1, gc2, len1, len2,  gc_th=0.02, len_th=0.02){
 
 ```{r import_bed_file}
 
-ds_create_with_random_neg = function(dnabert_input, ds, genome) {
+ds_create_with_random_neg = function(dnabert_input, ds, genome, width_value) {
   
   # create BED file
-
+  
   options(scipen=999)
   
   df <- data.frame(seqnames=seqnames(dnabert_input),
@@ -205,7 +201,8 @@ ds_create_with_random_neg = function(dnabert_input, ds, genome) {
   ichrA = as.character(names(chrlens))
   
   # import BED file representing dnabert input
-
+  
+  inputBedFN="dnabert_input.bed"
   inBed = rtracklayer::import.bed(inputBedFN)
   inbed = GenomicRanges::as.data.frame(inBed)
   
@@ -227,7 +224,7 @@ ds_create_with_random_neg = function(dnabert_input, ds, genome) {
   
   # find negative sequences
   
-  nMaxTrials = 250
+  nMaxTrials = 1000
   batchsize = 7000
   length_match_tol = 0
   GC_match_tol = 0.01
@@ -235,7 +232,7 @@ ds_create_with_random_neg = function(dnabert_input, ds, genome) {
   for(iter in 1:nMaxTrials){
       if(length(unmatched)>0){
         cat(' Trial',iter,'out of',nMaxTrials,'\n')
-        rndBed = generateRandomGenSeqs(rep(desLens[unmatched],length.out=batchsize))
+        rndBed = generateRandomGenSeqs(rep(desLens[unmatched],length.out=batchsize), pmax, chrpos, ichrA, chrpos0)
         rndbed= GenomicRanges::as.data.frame(rndBed)
         cat(' importing sequences\n')
         rndSeqs = Biostrings::getSeq(genome, rndBed)
@@ -286,45 +283,48 @@ ds_create_with_random_neg = function(dnabert_input, ds, genome) {
   dsname_long = ds
   dsname_pre = str_replace_all(dsname_long,".narrowPeak.gz","")
   dsname = str_replace_all(dsname_pre,"wgEncodeAwgTfbs","")
-  filename=paste("/Users/sjg/Downloads/tfbs_datasets/",dsname,"-ran.csv", sep='')
+  filename=paste("/Users/sjg/Downloads/tfbs_datasets/",dsname, width_value, "-ran.csv", sep='')
   write.csv(out_df, file=filename)
   
 }
 
 
 ```
-
+Width changed to 151
 ```{r test_function}
 ds_create = function(ah, ds) {
+  width_value = 151
   genome = BSgenome.Hsapiens.UCSC.hg19
   gr = subset(ah, title == ds)[[1]]
-  dnabert_input = resize(gr, width = 101, fix = "center")
-  ds_create_with_random_neg(dnabert_input, ds, genome)
+  dnabert_input = resize(gr, width = width_value, fix = "center")
+  ds_create_with_random_neg(dnabert_input, ds, genome, width_value)
 }
 
 ```
 Function to create positive and negative sequences from each TFBS dataset
 
 
-Loop over first 10 tfbs datasets
+Loop over tfbs datasets
 
 ```{r loop_tfbs}
-for (tfbs_ds in df1[[1]][641:690]) {
+for (tfbs_ds in df1[[1]][601:660]) {
   ds_create(ah,tfbs_ds)
 }
 ```
 
+Tests for output on matching GC and overlap
+
 ```{r file_test}
-df1[[1]][34:40]
+df1[[1]][354]
 ```
 
 
 ```{r test_gc}
-dna_pos = DNAString("CTGGCTCCCCCTGGCGGTCATGATAGGAAGCGCCCTTCCCCTCTGGCTCCTGTAGAGGGCGTCGCGGATGCATTGATCCTTTAGTTCCTTCACTGTCCATC")
-dna_neg = DNAString("TTGACCGAAGCAGGGTGAGTGCCTTCACCAGTCGGTACCGGACGAGGCCGGGCTCCGGGCTAAGGGGCTGTCGAAACTGCTGAATAGGCGGAGAGGAAAAT")
+dna_pos = DNAString("AGGAAATCCCCCTCCCATATCCAGATCATGATCTCTCAGACTCAATGTCCCCTCAGGATACCCCTCTACAGGGTCCCAGCTGCTGGGCTCCCTCTGGTTCCCGCCACTCTTCCCTTACCTCGTCTTCCAGCCTTTCTCTCACTCTCCCGCCTCCTCTGCCTCGCCGGAAGTGACGCGCTAAGTAGCGCGCCGTATCGCGCCAGAAAGGTTCCGAGGGAGCGGGAAAAAGGGTTCCGGCGAGATCCACTGCGCCGGTGTGCAGGCTCGAGCGGTCAAAGCTCTTTCCGGGGGCCCGGGGAACTACTCTCCTTGCCTCGCTCTGTCTCCTTCGAAGTGCTCTGCGCGAGGTTCAGAGCGGCCGCCGCCTCCAAAGGGACGGTTTTCTAGAGCTCCGACGCCTC")
+dna_neg = DNAString("CCGGTCAGGGCCAGGCCAAGAATAAAACCCAGGCTGCAGTCGGTGGCCCCGTGCACAGGCAGTCCGGCACCGCGGCGGGCCCCGTCATTCTGCAAACCGAAAGGTTGGCTGGAGCCTTCTGAAGAGGAAGTGGCCACAGCATCTGACAAAAGGTGCTTCCTTTTTCCTGCGTGGGAGTCAGTATCTGACAAGAGAGAGGAGAAAATAATGCCTCACTCTGAAGGCTCGGGGTGAGTCCCACGCAGCTGCAGAGGCCGCCGGAAGCTGCCTGGGCACTCTTCCACAGCGGCCGGCTAGAGGAGGGGCCGCAAGACAGAAGCTGTTAGCTCCAACCTCGCTGTGGAACGCAGGCCCCCTCCAGCGGACCCCACTCAAACCCCAGCCCCCGGCCACAGGGCCAG")
 dna_pos_GC = letterFrequency(dna_pos, "GC", as.prob = TRUE)
-dna_neg_GC = letterFrequency(dna_pos, "GC", as.prob = TRUE)
-dna_pos_GC
+dna_neg_GC = letterFrequency(dna_neg, "GC", as.prob = TRUE)
+length(dna_pos)
 ```
 
 ```{r test_overlap}
