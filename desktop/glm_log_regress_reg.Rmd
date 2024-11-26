@@ -1,0 +1,155 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+Get dataset
+
+```{r}
+setwd("/Users/sjg/2023/self/training/acm/bert/snp_results")
+can_tf_data = read.csv("SNP_PRVCS_CAN_0_5023-abs_diff_plus_log_odds_scores_norm_results_by_variant-R.csv")
+can_tf_data
+#pat_tf_data = read.csv("SNP_PRVCS_PAT_0_11436-abs_diff_plus_log_odds_scores_norm_results_by_variant-R.csv")
+#pat_tf_data
+#reg_tf_data = read.csv("SNP_PRVCS_REG_test_all-abs_diff_plus_log_odds_scores_norm_results_by_variant-R.csv")
+#reg_tf_data
+```
+
+Set seed
+
+```{r}
+set.seed(42)
+```
+
+Split into training and test sets
+
+```{r}
+can_tf_data[,"train"] = ifelse(runif(nrow(can_tf_data))<0.7,1,0)
+trainset = can_tf_data[can_tf_data$train==1,]
+testset = can_tf_data[can_tf_data$train==0,]
+#pat_tf_data[,"train"] = ifelse(runif(nrow(pat_tf_data))<0.7,1,0)
+#trainset = pat_tf_data[pat_tf_data$train==1,]
+#testset = pat_tf_data[pat_tf_data$train==0,]
+#reg_tf_data[,"train"] = ifelse(runif(nrow(reg_tf_data))<0.7,1,0)
+#trainset = reg_tf_data[reg_tf_data$train==1,]
+#testset = reg_tf_data[reg_tf_data$train==0,]
+```
+
+Get column index of train flag
+
+```{r}
+trainColNum = grep("train",names(trainset))
+```
+
+Remove train flag column from train and test sets
+
+```{r}
+trainset <- trainset[,-trainColNum]
+testset <- testset[,-trainColNum]
+```
+
+Get column index of predicted variable in dataset
+
+```{r}
+typeColNum = grep("label",names(can_tf_data))
+#typeColNum = grep("label",names(pat_tf_data))
+#typeColNum = grep("label",names(reg_tf_data))
+```
+
+Build model
+
+```{r}
+glm_model = glm(label~.,data = trainset, family = binomial)
+summary(glm_model)
+```
+
+Predict probabilities on test dataset
+```{r}
+glm_prob = predict.glm(glm_model,testset[,-typeColNum],type="response")
+glm_prob
+```
+
+Confusion matrix
+
+```{r}
+glm_predict <- rep(0,nrow(testset))
+glm_predict[glm_prob>.5] <- 1
+#confusion matrix
+table(pred=glm_predict,true=testset$label)
+```
+
+Accuracy
+
+```{r}
+mean(glm_predict==testset$label)
+```
+
+Lasso regularization
+
+```{r}
+#load required library
+library(glmnet)
+#convert training data to matrix format
+x <- model.matrix(label~.,trainset)
+#convert class to numerical variable
+y <- ifelse(trainset$label==1,1,0)
+#perform grid search to find optimal value of lambda
+#family= binomial => logistic regression, alpha=1 => lasso
+# check docs to explore other type.measure options
+cv.out <- cv.glmnet(x,y,alpha=1,family="binomial",type.measure = "mse" )
+#plot result
+plot(cv.out)
+```
+
+Lasso results
+
+```{r}
+#min value of lambda
+lambda_min = cv.out$lambda.min
+lambda_min
+#best value of lambda
+lambda_1se = cv.out$lambda.1se
+lambda_1se
+#regression coefficients
+coef(cv.out,s=lambda_1se)
+```
+
+
+Lasso results
+
+```{r}
+#get test data
+x_test <- model.matrix(label~.,testset)
+#predict class, type="class"
+lasso_prob <- predict(cv.out,newx = x_test,s=lambda_1se,type="response")
+#translate probabilities to predictions
+lasso_predict <- rep(0,nrow(testset))
+lasso_predict[lasso_prob>.5] <- 1
+#confusion matrix
+table(pred=lasso_predict,true=testset$label)
+#accuracy
+acc_lasso = mean(lasso_predict==testset$label)
+acc_lasso
+```
+
+ROC curve
+
+```{r}
+library(pROC)
+myroc <- roc(testset$label,lasso_predict, print.auc=TRUE, plot=TRUE)
+plot(myroc)
+```
+
+MCC score
+
+```{r}
+library(mltools)
+mcc(testset$label,lasso_predict)
+```
+
+F1 score
+
+```{r}
+library(MLmetrics)
+F1_Score(testset$label,lasso_predict, positive=1)
+```
